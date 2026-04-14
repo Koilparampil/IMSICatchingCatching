@@ -24,23 +24,49 @@ import java.util.Locale
 
 class TelephonyLogger(
     private val context: Context,
-    private val onLine: (String) -> Unit
+    private val onLine: ((String) -> Unit)? = null
 ) {
-    private val telephonyManager =
-        context.getSystemService(TelephonyManager::class.java)
+    data class CsvRow(
+        val event: String,
+        val networkType: String = "",
+        val serviceState: String = "",
+        val dataRegState: String = "",
+        val emergencyOnly: String = "",
+        val dataEnabled: String = "",
+        val mcc: String = "",
+        val mnc: String = "",
+        val plmn: String = "",
+        val tac: String = "",
+        val pci: String = "",
+        val earfcn: String = "",
+        val cellId: String = "",
+        val signalDbm: String = "",
+        val signalAsu: String = "",
+        val rsrp: String = "",
+        val rsrq: String = "",
+        val rssnrSinr: String = "",
+        val regInfo: String = "",
+        val notes: String = ""
+    )
+
+    private val telephonyManager = context.getSystemService(TelephonyManager::class.java)
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
-    private val logFile = File(context.filesDir, "telemetry_log.txt")
+    private val txtFile = File(context.filesDir, "telemetry_log.txt")
+    private val csvFile = File(context.filesDir, "telemetry_log.csv")
 
     private var isRunning = false
     private var callback31: TelephonyCallback? = null
     private var listenerLegacy: PhoneStateListener? = null
 
-    fun filePath(): String = logFile.absolutePath
+    fun textLogPath(): String = txtFile.absolutePath
+    fun csvLogPath(): String = csvFile.absolutePath
 
     fun start() {
         if (isRunning) return
         isRunning = true
+        ensureCsvHeader()
         append("session_start")
+        appendCsv(CsvRow(event = "session_start"))
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val callback = object : TelephonyCallback(),
@@ -64,23 +90,32 @@ class TelephonyLogger(
                 }
 
                 override fun onDataConnectionStateChanged(state: Int, networkType: Int) {
-                    append(
-                        "data_connection state=${dataStateToString(state)} networkType=${
-                            networkTypeToString(
-                                networkType
-                            )
-                        }"
+                    val nt = networkTypeToString(networkType)
+                    append("data_connection state=${dataStateToString(state)} networkType=$nt")
+                    appendCsv(
+                        CsvRow(
+                            event = "data_connection",
+                            networkType = nt,
+                            notes = dataStateToString(state)
+                        )
                     )
                 }
 
                 override fun onDisplayInfoChanged(telephonyDisplayInfo: TelephonyDisplayInfo) {
-                    append(
-                        "display_info override=${telephonyDisplayInfo.overrideNetworkType} network=${networkTypeToString(telephonyDisplayInfo.networkType)}"
+                    val networkType = networkTypeToString(telephonyDisplayInfo.networkType)
+                    append("display_info override=${telephonyDisplayInfo.overrideNetworkType} network=$networkType")
+                    appendCsv(
+                        CsvRow(
+                            event = "display_info",
+                            networkType = networkType,
+                            notes = "override=${telephonyDisplayInfo.overrideNetworkType}"
+                        )
                     )
                 }
 
                 override fun onUserMobileDataStateChanged(enabled: Boolean) {
                     append("mobile_data_enabled=$enabled")
+                    appendCsv(CsvRow(event = "mobile_data", dataEnabled = enabled.toString()))
                 }
             }
             callback31 = callback
@@ -101,12 +136,14 @@ class TelephonyLogger(
                 }
 
                 override fun onDataConnectionStateChanged(state: Int, networkType: Int) {
-                    append(
-                        "data_connection state=${dataStateToString(state)} networkType=${
-                            networkTypeToString(
-                                networkType
-                            )
-                        }"
+                    val nt = networkTypeToString(networkType)
+                    append("data_connection state=${dataStateToString(state)} networkType=$nt")
+                    appendCsv(
+                        CsvRow(
+                            event = "data_connection",
+                            networkType = nt,
+                            notes = dataStateToString(state)
+                        )
                     )
                 }
 
@@ -116,6 +153,7 @@ class TelephonyLogger(
 
                 override fun onUserMobileDataStateChanged(enabled: Boolean) {
                     append("mobile_data_enabled=$enabled")
+                    appendCsv(CsvRow(event = "mobile_data", dataEnabled = enabled.toString()))
                 }
             }
             listenerLegacy = listener
@@ -144,135 +182,258 @@ class TelephonyLogger(
         }
         isRunning = false
         append("session_stop")
+        appendCsv(CsvRow(event = "session_stop"))
     }
 
     private fun pollCurrentState() {
-        append(
-            "network_summary data=${networkTypeToString(telephonyManager.dataNetworkType)} voice=${networkTypeToString(telephonyManager.voiceNetworkType)}"
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            append("data_enabled=${telephonyManager.isDataEnabled}")
-        }
+        val dataType = networkTypeToString(telephonyManager.dataNetworkType)
+        val voiceType = networkTypeToString(telephonyManager.voiceNetworkType)
+        append("network_summary data=$dataType voice=$voiceType")
+        appendCsv(CsvRow(event = "network_summary", networkType = "$dataType/$voiceType"))
+        append("data_enabled=${telephonyManager.isDataEnabled}")
+        appendCsv(CsvRow(event = "data_enabled_snapshot", dataEnabled = telephonyManager.isDataEnabled.toString()))
         telephonyManager.serviceState?.let { appendServiceState("service_state_snapshot", it) }
         try {
             appendCellInfo(telephonyManager.allCellInfo ?: emptyList())
         } catch (se: SecurityException) {
             append("cell_info_error=SecurityException(${se.message})")
+            appendCsv(CsvRow(event = "cell_info_error", notes = "SecurityException"))
         }
     }
 
     private fun appendSignal(signalStrength: SignalStrength) {
-        append(
-            "signal_strength dbm=${signalStrength.dbm} level=${signalStrength.level} asu=${signalStrength.gsmSignalStrength} raw=${signalStrength}"
+        append("signal_strength dbm=${signalStrength.dbm} level=${signalStrength.level} asu=${signalStrength.gsmSignalStrength} raw=$signalStrength")
+        appendCsv(
+            CsvRow(
+                event = "signal_strength",
+                signalDbm = signalStrength.dbm.toString(),
+                signalAsu = signalStrength.gsmSignalStrength.toString(),
+                notes = "level=${signalStrength.level}"
+            )
         )
     }
 
     private fun appendServiceState(label: String, s: ServiceState) {
         val registrationInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            s.networkRegistrationInfoList.joinToString(separator = "|") { info ->
+            s.networkRegistrationInfoList.joinToString("|") { info ->
                 "domain=${info.domain},transport=${info.transportType},regState=${info.registrationState},roamingType=${info.roamingType},accessTech=${info.accessNetworkTechnology}"
             }
         } else {
             "unavailable_pre_api29"
         }
-
         val dataRegState = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             serviceStateToString(s.dataRegistrationState)
         } else {
             "n/a_pre_api30"
         }
-        append(
-            "$label state=${serviceStateToString(s.state)} dataReg=$dataRegState voiceReg=${serviceStateToString(s.state)} emergencyOnly=${s.isEmergencyOnly} operatorNumeric=${s.operatorNumeric ?: "unknown"} operatorAlphaLong=${s.operatorAlphaLong ?: "unknown"} roaming=${s.roaming} nrState=${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) s.nrState else "n/a"} regInfo=$registrationInfo"
+        val state = serviceStateToString(s.state)
+        val plmn = s.operatorNumeric ?: ""
+        append("$label state=$state dataReg=$dataRegState emergencyOnly=${s.isEmergencyOnly} operatorNumeric=${s.operatorNumeric ?: "unknown"} roaming=${s.roaming} regInfo=$registrationInfo")
+        appendCsv(
+            CsvRow(
+                event = label,
+                serviceState = state,
+                dataRegState = dataRegState,
+                emergencyOnly = s.isEmergencyOnly.toString(),
+                plmn = plmn,
+                regInfo = registrationInfo,
+                notes = "roaming=${s.roaming}"
+            )
         )
     }
 
     private fun appendCellInfo(cellInfos: List<CellInfo>) {
         if (cellInfos.isEmpty()) {
             append("cell_info empty")
+            appendCsv(CsvRow(event = "cell_info", notes = "empty"))
             return
         }
-        cellInfos.forEachIndexed { index, info ->
+
+        for ((index, info) in cellInfos.withIndex()) {
             val registered = info.isRegistered
-            val timestampNs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                info.timestampMillis.toString()
-            } else {
-                info.timeStamp.toString()
-            }
-            val identityDetails = when (info) {
+            val timestamp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) info.timestampMillis else info.timeStamp
+
+            when (info) {
                 is CellInfoLte -> {
                     val ci = info.cellIdentity
                     val ss = info.cellSignalStrength
-                    lteDetails(ci, ss.rsrp, ss.rsrq, ss.rssnr, ss.cqi, ss.dbm)
+                    val mcc = ci.mccString.orEmpty()
+                    val mnc = ci.mncString.orEmpty()
+                    val plmn = "$mcc$mnc"
+                    append(
+                        "cell_info[$index] registered=$registered ts=$timestamp type=LTE mcc=$mcc mnc=$mnc plmn=$plmn tac=${ci.tac} pci=${ci.pci} earfcn=${ci.earfcn} cellId=${ci.ci} rsrp=${ss.rsrp} rsrq=${ss.rsrq} rssnr=${ss.rssnr} dbm=${ss.dbm}"
+                    )
+                    appendCsv(
+                        CsvRow(
+                            event = "cell_lte",
+                            mcc = mcc,
+                            mnc = mnc,
+                            plmn = plmn,
+                            tac = ci.tac.toString(),
+                            pci = ci.pci.toString(),
+                            earfcn = ci.earfcn.toString(),
+                            cellId = ci.ci.toString(),
+                            signalDbm = ss.dbm.toString(),
+                            rsrp = ss.rsrp.toString(),
+                            rsrq = ss.rsrq.toString(),
+                            rssnrSinr = ss.rssnr.toString(),
+                            notes = "registered=$registered"
+                        )
+                    )
                 }
 
                 is CellInfoNr -> {
                     val ci = info.cellIdentity
                     val ss = info.cellSignalStrength
-                    nrDetails(ci, ss.ssRsrp, ss.ssRsrq, ss.ssSinr, ss.csiRsrp, ss.csiRsrq, ss.csiSinr, ss.dbm)
+                    val mcc = ci.mccString.orEmpty()
+                    val mnc = ci.mncString.orEmpty()
+                    val plmn = "$mcc$mnc"
+                    append(
+                        "cell_info[$index] registered=$registered ts=$timestamp type=NR mcc=$mcc mnc=$mnc plmn=$plmn tac=${ci.tac} pci=${ci.pci} nrarfcn=${ci.nrarfcn} cellId=${ci.nci} ssRsrp=${ss.ssRsrp} ssRsrq=${ss.ssRsrq} ssSinr=${ss.ssSinr} dbm=${ss.dbm}"
+                    )
+                    appendCsv(
+                        CsvRow(
+                            event = "cell_nr",
+                            mcc = mcc,
+                            mnc = mnc,
+                            plmn = plmn,
+                            tac = ci.tac.toString(),
+                            pci = ci.pci.toString(),
+                            earfcn = ci.nrarfcn.toString(),
+                            cellId = ci.nci.toString(),
+                            signalDbm = ss.dbm.toString(),
+                            rsrp = ss.ssRsrp.toString(),
+                            rsrq = ss.ssRsrq.toString(),
+                            rssnrSinr = ss.ssSinr.toString(),
+                            notes = "registered=$registered"
+                        )
+                    )
                 }
 
                 is CellInfoGsm -> {
                     val ci = info.cellIdentity
                     val ss = info.cellSignalStrength
-                    "type=GSM mcc=${ci.mccString} mnc=${ci.mncString} lac=${ci.lac} cid=${ci.cid} arfcn=${ci.arfcn} bsic=${ci.bsic} dbm=${ss.dbm} asu=${ss.asuLevel}"
+                    append("cell_info[$index] registered=$registered ts=$timestamp type=GSM mcc=${ci.mccString} mnc=${ci.mncString} lac=${ci.lac} cid=${ci.cid} arfcn=${ci.arfcn} dbm=${ss.dbm}")
+                    appendCsv(
+                        CsvRow(
+                            event = "cell_gsm",
+                            mcc = ci.mccString.orEmpty(),
+                            mnc = ci.mncString.orEmpty(),
+                            cellId = ci.cid.toString(),
+                            earfcn = ci.arfcn.toString(),
+                            signalDbm = ss.dbm.toString(),
+                            signalAsu = ss.asuLevel.toString(),
+                            notes = "registered=$registered lac=${ci.lac}"
+                        )
+                    )
                 }
 
                 is CellInfoWcdma -> {
                     val ci = info.cellIdentity
                     val ss = info.cellSignalStrength
-                    "type=WCDMA mcc=${ci.mccString} mnc=${ci.mncString} lac=${ci.lac} cid=${ci.cid} psc=${ci.psc} uarfcn=${ci.uarfcn} dbm=${ss.dbm} asu=${ss.asuLevel}"
+                    append("cell_info[$index] registered=$registered ts=$timestamp type=WCDMA mcc=${ci.mccString} mnc=${ci.mncString} lac=${ci.lac} cid=${ci.cid} uarfcn=${ci.uarfcn} psc=${ci.psc} dbm=${ss.dbm}")
+                    appendCsv(
+                        CsvRow(
+                            event = "cell_wcdma",
+                            mcc = ci.mccString.orEmpty(),
+                            mnc = ci.mncString.orEmpty(),
+                            cellId = ci.cid.toString(),
+                            earfcn = ci.uarfcn.toString(),
+                            signalDbm = ss.dbm.toString(),
+                            signalAsu = ss.asuLevel.toString(),
+                            notes = "registered=$registered lac=${ci.lac}"
+                        )
+                    )
                 }
 
                 is CellInfoTdscdma -> {
                     val ci = info.cellIdentity
                     val ss = info.cellSignalStrength
-                    "type=TDSCDMA mcc=${ci.mccString} mnc=${ci.mncString} lac=${ci.lac} cid=${ci.cid} cpid=${ci.cpid} uarfcn=${ci.uarfcn} dbm=${ss.dbm} asu=${ss.asuLevel}"
+                    append("cell_info[$index] registered=$registered ts=$timestamp type=TDSCDMA mcc=${ci.mccString} mnc=${ci.mncString} lac=${ci.lac} cid=${ci.cid} uarfcn=${ci.uarfcn} cpid=${ci.cpid} dbm=${ss.dbm}")
+                    appendCsv(
+                        CsvRow(
+                            event = "cell_tdscdma",
+                            mcc = ci.mccString.orEmpty(),
+                            mnc = ci.mncString.orEmpty(),
+                            cellId = ci.cid.toString(),
+                            earfcn = ci.uarfcn.toString(),
+                            signalDbm = ss.dbm.toString(),
+                            signalAsu = ss.asuLevel.toString(),
+                            notes = "registered=$registered lac=${ci.lac}"
+                        )
+                    )
                 }
 
                 is CellInfoCdma -> {
                     val ci = info.cellIdentity
                     val ss = info.cellSignalStrength
-                    "type=CDMA networkId=${ci.networkId} systemId=${ci.systemId} basestationId=${ci.basestationId} latitude=${ci.latitude} longitude=${ci.longitude} cdmaDbm=${ss.cdmaDbm} evdoDbm=${ss.evdoDbm}"
+                    append("cell_info[$index] registered=$registered ts=$timestamp type=CDMA networkId=${ci.networkId} systemId=${ci.systemId} basestationId=${ci.basestationId} cdmaDbm=${ss.cdmaDbm} evdoDbm=${ss.evdoDbm}")
+                    appendCsv(
+                        CsvRow(
+                            event = "cell_cdma",
+                            cellId = ci.basestationId.toString(),
+                            signalDbm = ss.cdmaDbm.toString(),
+                            notes = "registered=$registered networkId=${ci.networkId} systemId=${ci.systemId}"
+                        )
+                    )
                 }
 
-                else -> "type=UNKNOWN raw=$info"
+                else -> {
+                    append("cell_info[$index] registered=$registered ts=$timestamp raw=$info")
+                    appendCsv(CsvRow(event = "cell_unknown", notes = "registered=$registered raw=$info"))
+                }
             }
-            append("cell_info[$index] registered=$registered ts=$timestampNs $identityDetails")
         }
     }
 
-    private fun lteDetails(
-        ci: CellIdentityLte,
-        rsrp: Int,
-        rsrq: Int,
-        rssnr: Int,
-        cqi: Int,
-        dbm: Int
-    ): String {
-        return "type=LTE mcc=${ci.mccString} mnc=${ci.mncString} plmn=${ci.mccString}${ci.mncString} tac=${ci.tac} ci=${ci.ci} pci=${ci.pci} earfcn=${ci.earfcn} bandwidth=${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) ci.bandwidth else "n/a"} rsrp=$rsrp rsrq=$rsrq rssnr=$rssnr cqi=$cqi dbm=$dbm"
-    }
-
-    private fun nrDetails(
-        ci: CellIdentityNr,
-        ssRsrp: Int,
-        ssRsrq: Int,
-        ssSinr: Int,
-        csiRsrp: Int,
-        csiRsrq: Int,
-        csiSinr: Int,
-        dbm: Int
-    ): String {
-        val nci = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ci.nci else Long.MAX_VALUE
-        val tac = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ci.tac else Int.MAX_VALUE
-        val nrarfcn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ci.nrarfcn else Int.MAX_VALUE
-        val pci = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ci.pci else Int.MAX_VALUE
-        return "type=NR mcc=${ci.mccString} mnc=${ci.mncString} plmn=${ci.mccString}${ci.mncString} tac=$tac nci=$nci pci=$pci nrarfcn=$nrarfcn ssRsrp=$ssRsrp ssRsrq=$ssRsrq ssSinr=$ssSinr csiRsrp=$csiRsrp csiRsrq=$csiRsrq csiSinr=$csiSinr dbm=$dbm"
+    private fun ensureCsvHeader() {
+        if (csvFile.exists() && csvFile.length() > 0L) return
+        csvFile.appendText(
+            "timestamp,event,network_type,service_state,data_reg_state,emergency_only,data_enabled,mcc,mnc,plmn,tac,pci,earfcn,cell_id,signal_dbm,signal_asu,rsrp,rsrq,rssnr_sinr,reg_info,notes\n"
+        )
     }
 
     private fun append(message: String) {
         val line = "${dateFormat.format(Date())} | $message"
-        logFile.appendText(line + "\n")
-        onLine(line)
+        txtFile.appendText(line + "\n")
+        onLine?.invoke(line)
+    }
+
+    private fun appendCsv(row: CsvRow) {
+        val ts = dateFormat.format(Date())
+        val data = listOf(
+            ts,
+            row.event,
+            row.networkType,
+            row.serviceState,
+            row.dataRegState,
+            row.emergencyOnly,
+            row.dataEnabled,
+            row.mcc,
+            row.mnc,
+            row.plmn,
+            row.tac,
+            row.pci,
+            row.earfcn,
+            row.cellId,
+            row.signalDbm,
+            row.signalAsu,
+            row.rsrp,
+            row.rsrq,
+            row.rssnrSinr,
+            row.regInfo,
+            row.notes
+        ).joinToString(",") { escapeCsv(it) }
+        csvFile.appendText(data + "\n")
+    }
+
+    private fun escapeCsv(value: String): String {
+        val clean = value.replace("\n", " ")
+        return if (clean.contains(',') || clean.contains('"')) {
+            "\"${clean.replace("\"", "\"\"")}\""
+        } else {
+            clean
+        }
     }
 
     private fun serviceStateToString(state: Int): String = when (state) {

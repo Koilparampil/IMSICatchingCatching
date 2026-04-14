@@ -1,36 +1,49 @@
 # IMSI Catching Logger (Android 8.0+)
 
-This project is a small Android app that:
+This Android app continuously logs telephony/network context in a **foreground service** so collection can continue while the app is backgrounded.
 
-- Logs telephony/network context to an on-device file with timestamps.
-- Displays the same stream live on screen while logging.
-- Supports Android 8.0 (API 26) and newer.
+## What it records
 
-## Captured fields (when exposed by Android APIs and permissions)
+- Timestamped events.
+- Current network type (voice/data).
+- Service state changes (`IN_SERVICE`, `OUT_OF_SERVICE`, `EMERGENCY_ONLY`, etc.).
+- Registration state details where Android APIs expose them.
+- Signal strength metrics.
+- Cell identities across LTE/NR/GSM/WCDMA/TDSCDMA/CDMA.
+- LTE/NR identity metrics including **EARFCN/NRARFCN, TAC, MCC, MNC, PLMN, PCI, Cell ID/NCI**.
+- Data enabled snapshots / mobile data toggles.
 
-- Current network type (data and voice)
-- Service state transitions
-- Registration details (via `NetworkRegistrationInfo` on API 29+)
-- Signal strength updates
-- Cell identities for LTE/NR/GSM/WCDMA/TDSCDMA/CDMA
-- PLMN/TAC/PCI (or equivalent IDs by RAT)
-- Data enabled state (`isDataEnabled` / user mobile data state changes)
-- Emergency-only / out-of-service state
+## Output files
 
-## Log file location
+The app writes both:
 
-The app writes logs to:
+- Text log: `filesDir/telemetry_log.txt`
+- CSV log: `filesDir/telemetry_log.csv`
 
-- `filesDir/telemetry_log.txt`
+CSV includes dedicated columns for:
 
-The exact absolute path is shown at the top of the UI.
+- `mcc`, `mnc`, `plmn`, `tac`, `pci`, `earfcn`, `cell_id`
 
-## Permissions
+## UI features
 
-The app requests at runtime:
+- Start/Stop foreground logging service.
+- Live event stream shown on-screen.
+- CSV export/share button.
+
+## Permissions declared
+
+The app declares broad telephony/background permissions to maximize available data from public APIs:
 
 - `ACCESS_FINE_LOCATION`
 - `ACCESS_COARSE_LOCATION`
+- `ACCESS_BACKGROUND_LOCATION`
 - `READ_PHONE_STATE`
+- `READ_BASIC_PHONE_STATE`
+- `READ_PRECISE_PHONE_STATE`
+- `ACCESS_NETWORK_STATE`
+- `FOREGROUND_SERVICE`
+- `FOREGROUND_SERVICE_DATA_SYNC`
+- `POST_NOTIFICATIONS`
+- `RECEIVE_BOOT_COMPLETED`
 
-Without these permissions, Android may withhold cell and operator details.
+> Note: some permissions (for example precise telephony details) may still be restricted by OEM/carrier policy or privileged protection levels on some builds.
