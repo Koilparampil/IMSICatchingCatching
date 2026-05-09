@@ -253,12 +253,16 @@ class TelephonyLogger(
             val registered = info.isRegistered
             val timestamp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) info.timestampMillis else info.timeStamp
 
-            when (info) {
-                is CellInfoLte -> {
+            when {
+                info is CellInfoLte -> {
                     val ci = info.cellIdentity
                     val ss = info.cellSignalStrength
-                    val mcc = ci.mccString.orEmpty()
-                    val mnc = ci.mncString.orEmpty()
+                    @Suppress("DEPRECATION")
+                    val mcc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) ci.mccString.orEmpty()
+                              else ci.mcc.takeIf { it != Int.MAX_VALUE }?.toString() ?: ""
+                    @Suppress("DEPRECATION")
+                    val mnc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) ci.mncString.orEmpty()
+                              else ci.mnc.takeIf { it != Int.MAX_VALUE }?.toString() ?: ""
                     val plmn = "$mcc$mnc"
                     append(
                         "cell_info[$index] registered=$registered ts=$timestamp type=LTE mcc=$mcc mnc=$mnc plmn=$plmn tac=${ci.tac} pci=${ci.pci} earfcn=${ci.earfcn} cellId=${ci.ci} rsrp=${ss.rsrp} rsrq=${ss.rsrq} rssnr=${ss.rssnr} dbm=${ss.dbm}"
@@ -266,23 +270,18 @@ class TelephonyLogger(
                     appendCsv(
                         CsvRow(
                             event = "cell_lte",
-                            mcc = mcc,
-                            mnc = mnc,
-                            plmn = plmn,
-                            tac = ci.tac.toString(),
-                            pci = ci.pci.toString(),
-                            earfcn = ci.earfcn.toString(),
-                            cellId = ci.ci.toString(),
+                            mcc = mcc, mnc = mnc, plmn = plmn,
+                            tac = ci.tac.toString(), pci = ci.pci.toString(),
+                            earfcn = ci.earfcn.toString(), cellId = ci.ci.toString(),
                             signalDbm = ss.dbm.toString(),
-                            rsrp = ss.rsrp.toString(),
-                            rsrq = ss.rsrq.toString(),
+                            rsrp = ss.rsrp.toString(), rsrq = ss.rsrq.toString(),
                             rssnrSinr = ss.rssnr.toString(),
                             notes = "registered=$registered"
                         )
                     )
                 }
 
-                is CellInfoNr -> {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info is CellInfoNr -> {
                     val ci = info.cellIdentity as CellIdentityNr
                     val ss = info.cellSignalStrength as CellSignalStrengthNr
                     val mcc = ci.mccString.orEmpty()
@@ -294,77 +293,77 @@ class TelephonyLogger(
                     appendCsv(
                         CsvRow(
                             event = "cell_nr",
-                            mcc = mcc,
-                            mnc = mnc,
-                            plmn = plmn,
-                            tac = ci.tac.toString(),
-                            pci = ci.pci.toString(),
-                            earfcn = ci.nrarfcn.toString(),
-                            cellId = ci.nci.toString(),
+                            mcc = mcc, mnc = mnc, plmn = plmn,
+                            tac = ci.tac.toString(), pci = ci.pci.toString(),
+                            earfcn = ci.nrarfcn.toString(), cellId = ci.nci.toString(),
                             signalDbm = ss.dbm.toString(),
-                            rsrp = ss.ssRsrp.toString(),
-                            rsrq = ss.ssRsrq.toString(),
+                            rsrp = ss.ssRsrp.toString(), rsrq = ss.ssRsrq.toString(),
                             rssnrSinr = ss.ssSinr.toString(),
                             notes = "registered=$registered"
                         )
                     )
                 }
 
-                is CellInfoGsm -> {
+                info is CellInfoGsm -> {
                     val ci = info.cellIdentity
                     val ss = info.cellSignalStrength
-                    append("cell_info[$index] registered=$registered ts=$timestamp type=GSM mcc=${ci.mccString} mnc=${ci.mncString} lac=${ci.lac} cid=${ci.cid} arfcn=${ci.arfcn} dbm=${ss.dbm}")
+                    @Suppress("DEPRECATION")
+                    val mcc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) ci.mccString.orEmpty()
+                              else ci.mcc.takeIf { it != Int.MAX_VALUE }?.toString() ?: ""
+                    @Suppress("DEPRECATION")
+                    val mnc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) ci.mncString.orEmpty()
+                              else ci.mnc.takeIf { it != Int.MAX_VALUE }?.toString() ?: ""
+                    append("cell_info[$index] registered=$registered ts=$timestamp type=GSM mcc=$mcc mnc=$mnc lac=${ci.lac} cid=${ci.cid} arfcn=${ci.arfcn} dbm=${ss.dbm}")
                     appendCsv(
                         CsvRow(
                             event = "cell_gsm",
-                            mcc = ci.mccString.orEmpty(),
-                            mnc = ci.mncString.orEmpty(),
-                            cellId = ci.cid.toString(),
-                            earfcn = ci.arfcn.toString(),
-                            signalDbm = ss.dbm.toString(),
-                            signalAsu = ss.asuLevel.toString(),
+                            mcc = mcc, mnc = mnc,
+                            cellId = ci.cid.toString(), earfcn = ci.arfcn.toString(),
+                            signalDbm = ss.dbm.toString(), signalAsu = ss.asuLevel.toString(),
                             notes = "registered=$registered lac=${ci.lac}"
                         )
                     )
                 }
 
-                is CellInfoWcdma -> {
+                info is CellInfoWcdma -> {
                     val ci = info.cellIdentity
                     val ss = info.cellSignalStrength
-                    append("cell_info[$index] registered=$registered ts=$timestamp type=WCDMA mcc=${ci.mccString} mnc=${ci.mncString} lac=${ci.lac} cid=${ci.cid} uarfcn=${ci.uarfcn} psc=${ci.psc} dbm=${ss.dbm}")
+                    @Suppress("DEPRECATION")
+                    val mcc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) ci.mccString.orEmpty()
+                              else ci.mcc.takeIf { it != Int.MAX_VALUE }?.toString() ?: ""
+                    @Suppress("DEPRECATION")
+                    val mnc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) ci.mncString.orEmpty()
+                              else ci.mnc.takeIf { it != Int.MAX_VALUE }?.toString() ?: ""
+                    append("cell_info[$index] registered=$registered ts=$timestamp type=WCDMA mcc=$mcc mnc=$mnc lac=${ci.lac} cid=${ci.cid} uarfcn=${ci.uarfcn} psc=${ci.psc} dbm=${ss.dbm}")
                     appendCsv(
                         CsvRow(
                             event = "cell_wcdma",
-                            mcc = ci.mccString.orEmpty(),
-                            mnc = ci.mncString.orEmpty(),
-                            cellId = ci.cid.toString(),
-                            earfcn = ci.uarfcn.toString(),
-                            signalDbm = ss.dbm.toString(),
-                            signalAsu = ss.asuLevel.toString(),
+                            mcc = mcc, mnc = mnc,
+                            cellId = ci.cid.toString(), earfcn = ci.uarfcn.toString(),
+                            signalDbm = ss.dbm.toString(), signalAsu = ss.asuLevel.toString(),
                             notes = "registered=$registered lac=${ci.lac}"
                         )
                     )
                 }
 
-                is CellInfoTdscdma -> {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info is CellInfoTdscdma -> {
                     val ci = info.cellIdentity
                     val ss = info.cellSignalStrength
-                    append("cell_info[$index] registered=$registered ts=$timestamp type=TDSCDMA mcc=${ci.mccString} mnc=${ci.mncString} lac=${ci.lac} cid=${ci.cid} uarfcn=${ci.uarfcn} cpid=${ci.cpid} dbm=${ss.dbm}")
+                    val mcc = ci.mccString.orEmpty()
+                    val mnc = ci.mncString.orEmpty()
+                    append("cell_info[$index] registered=$registered ts=$timestamp type=TDSCDMA mcc=$mcc mnc=$mnc lac=${ci.lac} cid=${ci.cid} uarfcn=${ci.uarfcn} cpid=${ci.cpid} dbm=${ss.dbm}")
                     appendCsv(
                         CsvRow(
                             event = "cell_tdscdma",
-                            mcc = ci.mccString.orEmpty(),
-                            mnc = ci.mncString.orEmpty(),
-                            cellId = ci.cid.toString(),
-                            earfcn = ci.uarfcn.toString(),
-                            signalDbm = ss.dbm.toString(),
-                            signalAsu = ss.asuLevel.toString(),
+                            mcc = mcc, mnc = mnc,
+                            cellId = ci.cid.toString(), earfcn = ci.uarfcn.toString(),
+                            signalDbm = ss.dbm.toString(), signalAsu = ss.asuLevel.toString(),
                             notes = "registered=$registered lac=${ci.lac}"
                         )
                     )
                 }
 
-                is CellInfoCdma -> {
+                info is CellInfoCdma -> {
                     val ci = info.cellIdentity
                     val ss = info.cellSignalStrength
                     append("cell_info[$index] registered=$registered ts=$timestamp type=CDMA networkId=${ci.networkId} systemId=${ci.systemId} basestationId=${ci.basestationId} cdmaDbm=${ss.cdmaDbm} evdoDbm=${ss.evdoDbm}")
