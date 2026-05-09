@@ -204,15 +204,14 @@ class TelephonyLogger(
     }
 
     private fun appendSignal(signalStrength: SignalStrength) {
-        val dbm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) signalStrength.dbm
-                  else signalStrength.gsmSignalStrength
-        append("signal_strength dbm=$dbm level=${signalStrength.level} asu=${signalStrength.gsmSignalStrength} raw=$signalStrength")
+        val asu = signalStrength.gsmSignalStrength
+        val level = signalStrength.level
+        append("signal_strength level=$level asu=$asu raw=$signalStrength")
         appendCsv(
             CsvRow(
                 event = "signal_strength",
-                signalDbm = dbm.toString(),
-                signalAsu = signalStrength.gsmSignalStrength.toString(),
-                notes = "level=${signalStrength.level}"
+                signalAsu = asu.toString(),
+                notes = "level=$level"
             )
         )
     }
@@ -220,20 +219,13 @@ class TelephonyLogger(
     private fun appendServiceState(label: String, s: ServiceState) {
         val registrationInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             s.networkRegistrationInfoList.joinToString("|") { info ->
-                "domain=${info.domain},transport=${info.transportType},regState=${info.registrationState},roamingType=${info.roamingType},accessTech=${info.accessNetworkTechnology}"
+                "domain=${info.domain},transport=${info.transportType},accessTech=${info.accessNetworkTechnology}"
             }
         } else {
             "unavailable_pre_api30"
         }
-        val dataRegState = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            s.networkRegistrationInfoList
-                .firstOrNull { it.domain == NetworkRegistrationInfo.DOMAIN_PS }
-                ?.let { serviceStateToString(it.registrationState) }
-                ?: "unknown"
-        } else {
-            "n/a_pre_api30"
-        }
-        val emergencyOnly = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) s.isEmergencyOnly.toString() else "n/a"
+        val dataRegState = serviceStateToString(s.state)
+        val emergencyOnly = (s.state == ServiceState.STATE_EMERGENCY_ONLY).toString()
         val state = serviceStateToString(s.state)
         val plmn = s.operatorNumeric ?: ""
         append("$label state=$state dataReg=$dataRegState emergencyOnly=$emergencyOnly operatorNumeric=${s.operatorNumeric ?: "unknown"} roaming=${s.roaming} regInfo=$registrationInfo")
