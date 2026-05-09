@@ -11,6 +11,8 @@ import android.telephony.CellInfoLte
 import android.telephony.CellInfoNr
 import android.telephony.CellInfoTdscdma
 import android.telephony.CellInfoWcdma
+import android.telephony.CellSignalStrengthNr
+import android.telephony.NetworkRegistrationInfo
 import android.telephony.PhoneStateListener
 import android.telephony.ServiceState
 import android.telephony.SignalStrength
@@ -202,11 +204,13 @@ class TelephonyLogger(
     }
 
     private fun appendSignal(signalStrength: SignalStrength) {
-        append("signal_strength dbm=${signalStrength.dbm} level=${signalStrength.level} asu=${signalStrength.gsmSignalStrength} raw=$signalStrength")
+        val dbm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) signalStrength.dbm
+                  else signalStrength.gsmSignalStrength
+        append("signal_strength dbm=$dbm level=${signalStrength.level} asu=${signalStrength.gsmSignalStrength} raw=$signalStrength")
         appendCsv(
             CsvRow(
                 event = "signal_strength",
-                signalDbm = signalStrength.dbm.toString(),
+                signalDbm = dbm.toString(),
                 signalAsu = signalStrength.gsmSignalStrength.toString(),
                 notes = "level=${signalStrength.level}"
             )
@@ -214,27 +218,31 @@ class TelephonyLogger(
     }
 
     private fun appendServiceState(label: String, s: ServiceState) {
-        val registrationInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val registrationInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             s.networkRegistrationInfoList.joinToString("|") { info ->
                 "domain=${info.domain},transport=${info.transportType},regState=${info.registrationState},roamingType=${info.roamingType},accessTech=${info.accessNetworkTechnology}"
             }
         } else {
-            "unavailable_pre_api29"
+            "unavailable_pre_api30"
         }
         val dataRegState = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            serviceStateToString(s.dataRegistrationState)
+            s.networkRegistrationInfoList
+                .firstOrNull { it.domain == NetworkRegistrationInfo.DOMAIN_PS }
+                ?.let { serviceStateToString(it.registrationState) }
+                ?: "unknown"
         } else {
             "n/a_pre_api30"
         }
+        val emergencyOnly = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) s.isEmergencyOnly.toString() else "n/a"
         val state = serviceStateToString(s.state)
         val plmn = s.operatorNumeric ?: ""
-        append("$label state=$state dataReg=$dataRegState emergencyOnly=${s.isEmergencyOnly} operatorNumeric=${s.operatorNumeric ?: "unknown"} roaming=${s.roaming} regInfo=$registrationInfo")
+        append("$label state=$state dataReg=$dataRegState emergencyOnly=$emergencyOnly operatorNumeric=${s.operatorNumeric ?: "unknown"} roaming=${s.roaming} regInfo=$registrationInfo")
         appendCsv(
             CsvRow(
                 event = label,
                 serviceState = state,
                 dataRegState = dataRegState,
-                emergencyOnly = s.isEmergencyOnly.toString(),
+                emergencyOnly = emergencyOnly,
                 plmn = plmn,
                 regInfo = registrationInfo,
                 notes = "roaming=${s.roaming}"
@@ -283,8 +291,8 @@ class TelephonyLogger(
                 }
 
                 is CellInfoNr -> {
-                    val ci = info.cellIdentity
-                    val ss = info.cellSignalStrength
+                    val ci = info.cellIdentity as CellIdentityNr
+                    val ss = info.cellSignalStrength as CellSignalStrengthNr
                     val mcc = ci.mccString.orEmpty()
                     val mnc = ci.mncString.orEmpty()
                     val plmn = "$mcc$mnc"
