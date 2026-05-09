@@ -46,7 +46,7 @@ class TelephonyLogger(
             override fun run() {
                 if (!isRunning) return
                 poll()
-                handler.postDelayed(this, 10)
+                handler.postDelayed(this, 50)
             }
         }
         handler.post(ticker)
